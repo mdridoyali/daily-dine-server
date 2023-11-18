@@ -37,20 +37,63 @@ async function run() {
     const reviewsCollection = client.db("DineDB").collection("reviews");
     const cartsCollection = client.db("DineDB").collection("carts");
 
+
     // JWT related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
-      console.log('email',user)
+      // console.log('email',user)
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
-
       res.send({ token })
     })
 
 
+    //middleware
+    const verifyToken = (req, res, next) => {
+      // console.log('inside verify token', req.headers.authorization)
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'unauthorize access' })
+      }
+      const token = req.headers.authorization.split(' ')[1]
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'unauthorize access' })
+        }
+        req.decoded = decoded
+        next()
+      })
+    }
+
+    // use verify admin after verifyToken
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email
+      const query = { email: email }
+      const user = await usersCollection.findOne(query)
+      const isAdmin = user?.role === 'admin'
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
+      next()
+    }
+
 
     // users related api
 
-    app.get('/users', async (req, res) => {
+    app.get('/user/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
+      const query = { email: email }
+      const user = await usersCollection.findOne(query);
+      let admin = false
+      if (user) {
+        admin = user?.role === 'admin'
+      }
+      res.send({ admin })
+    })
+
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      // console.log(req.headers)
       const result = await usersCollection.find().toArray()
       res.send(result)
     })
@@ -68,7 +111,7 @@ async function run() {
       res.send(result)
     })
 
-    app.patch('/users/admin/:id', async (req, res) => {
+    app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
       const updateDoc = {
@@ -81,7 +124,7 @@ async function run() {
 
     })
 
-    app.delete('/users/:id', async (req, res) => {
+    app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) }
       const result = await usersCollection.deleteOne(query)
@@ -102,6 +145,43 @@ async function run() {
       const result = await menuCollection.find().toArray();
       res.send(result);
     });
+
+    app.get('/menu/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await menuCollection.findOne(query)
+      res.send(result)
+    })
+
+    app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
+      const menuItem = req.body
+      const result = await menuCollection.insertOne(menuItem)
+      res.send(result)
+    })
+    app.delete('/menu/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await menuCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    app.patch('/menu/:id', async (req, res) => {
+      const id = req.params.id
+      const item = req.body
+      const query = { _id: new ObjectId(id) }
+      const updatedDoc = {
+        $set: {
+          name: item.name,
+          price: item.price,
+          category: item.category,
+          recipe: item.recipe,
+          image: item.image
+        }
+      }
+      const result = await menuCollection.updateOne(query, updatedDoc)
+      res.send(result)
+    })
+
 
     app.get("/reviews", async (req, res) => {
       const result = await reviewsCollection.find().toArray();
