@@ -43,7 +43,7 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/add-a-camp', async (req, res) => {
+    app.get('/all-camps', async (req, res) => {
       const result = await campCollection.find().toArray();
       res.send(result)
     })
